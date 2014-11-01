@@ -2,6 +2,7 @@
 from twisted.web import proxy, http
 from twisted.internet import reactor
 from twisted.internet.endpoints import clientFromString
+from twisted.python import log
 
 import urlparse
 
@@ -17,6 +18,9 @@ class TorProxyRequest(proxy.Request):
         self.socksPort = socksPort
 
     def process(self):
+
+        log.msg("Request %s from %s" % (self.uri, self.getClientIP()))
+
         parsed = urlparse.urlparse(self.uri)
         protocol = parsed[0]
         host = parsed[1]
@@ -46,8 +50,8 @@ class TorProxyRequest(proxy.Request):
         @d.addErrback
         def _gotError(error):
             # XXX
-            print error
-            print "TorProxyRequest: failure to connect: %s" % self.endpointDescriptor
+            log.err(error)
+            log.err("TorProxyRequest: failure to connect: %s" % self.endpointDescriptor)
 
 
 class TorProxy(http.HTTPChannel):
@@ -112,6 +116,7 @@ class TorProxy(http.HTTPChannel):
             if self.__header:
                 self.headerReceived(self.__header)
             self.__header = line
+
 
 class TorProxyFactory(http.HTTPFactory):
 
