@@ -16,6 +16,8 @@ def main():
     parser.add_argument("serverEndpoint")
     parser.add_argument("--socksPort", help="local Tor SOCKS port")
     parser.add_argument("--log", help="write logs. use '-' for stdout.")
+    parser.add_argument("--newCircuits", action="store_true", help="creates a new Tor circuit for every connect")
+
     args = parser.parse_args()
 
     if args.log:
@@ -24,8 +26,13 @@ def main():
         else:
             log.startLogging(open(args.log,'a'))
 
+    if args.newCircuits:
+        newCircuits = True
+    else:
+        newCircuits = False
+
     serverEndpoint = serverFromString(reactor, args.serverEndpoint)
-    connectDeferred = serverEndpoint.listen(TorProxyFactory(socksPort=args.socksPort))
+    connectDeferred = serverEndpoint.listen(TorProxyFactory(socksPort=args.socksPort, newCircuit=newCircuits))
 
     # XXX
     def clientConnectionFailed(factory, reason):

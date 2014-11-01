@@ -12,10 +12,11 @@ class TorProxyRequest(proxy.Request):
     protocols = {'http': proxy.ProxyClientFactory}
     ports = {'http': 80}
 
-    def __init__(self, channel, queued, reactor=reactor, socksPort=None):
+    def __init__(self, channel, queued, reactor=reactor, socksPort=None, newCircuit=None):
         proxy.Request.__init__(self, channel, queued)
         self.reactor = reactor
         self.socksPort = socksPort
+        self.newCircuit = newCircuit
 
     def process(self):
 
@@ -40,10 +41,16 @@ class TorProxyRequest(proxy.Request):
         clientFactory = class_(self.method, rest, self.clientproto, headers,
                                s, self)
         # XXX
+        self.endpointDescriptor = "tor:host=%s:port=%s" % (host, port)
+
         if self.socksPort:
-            self.endpointDescriptor = "tor:host=%s:port=%s:socksPort=%s" % (host, port, self.socksPort)
-        else:
-            self.endpointDescriptor = "tor:host=%s:port=%s" % (host, port)
+            self.endpointDescriptor += ":socksPort=%s" % (self.socksPort,)
+
+        log.msg("newCircuit %s" % self.newCircuit)
+        if self.newCircuit:
+            self.endpointDescriptor += ":newCircuit=Yes"
+
+        log.msg("CONNECT %s" % (self.endpointDescriptor,))
         torEndpoint = clientFromString(self.reactor, self.endpointDescriptor)
         d = torEndpoint.connect(clientFactory)
 
@@ -66,8 +73,9 @@ class TorProxy(http.HTTPChannel):
     __first_line = 1
     __content = None
 
-    def __init__(self, socksPort=None):
+    def __init__(self, socksPort=None, newCircuit=None):
         self.socksPort = socksPort
+        self.newCircuit = newCircuit
         http.HTTPChannel.__init__(self)
 
     def lineReceived(self, line):
@@ -88,7 +96,7 @@ class TorProxy(http.HTTPChannel):
                 return
 
             # create a new Request object
-            request = self.requestFactory(self, len(self.requests), socksPort=self.socksPort)
+            request = self.requestFactory(self, len(self.requests), socksPort=self.socksPort, newCircuit=self.newCircuit)
             self.requests.append(request)
 
             self.__first_line = 0
@@ -120,11 +128,12 @@ class TorProxy(http.HTTPChannel):
 
 class TorProxyFactory(http.HTTPFactory):
 
-    def __init__(self, socksPort=None):
+    def __init__(self, socksPort=None, newCircuit=None):
         self.socksPort = socksPort
+        self.newCircuit = newCircuit
         http.HTTPFactory.__init__(self)
 
     def buildProtocol(self, addr):
-        return TorProxy(socksPort=self.socksPort)
+        return TorProxy(socksPort=self.socksPort, newCircuit=self.newCircuit)
 
 
