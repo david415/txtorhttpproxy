@@ -59,7 +59,7 @@ class TorProxy(http.HTTPChannel):
 
     # XXX can we get rid of these class attributes and make
     # this code work with the parent's class attributes?
-    maxHeaders = 500 # max number of headers allowed per request	
+    maxHeaders = 500 # max number of headers allowed per request
     length = 0
     persistent = 1
     __header = ''
@@ -68,54 +68,8 @@ class TorProxy(http.HTTPChannel):
 
     def __init__(self, socksPort=None):
         self.socksPort = socksPort
+        self.requestFactory.socksPort = self.socksPort
         http.HTTPChannel.__init__(self)
-
-    def lineReceived(self, line):
-        """copied from twisted... and then modified"""
-        self.resetTimeout()
-
-        if self.__first_line:
-            # if this connection is not persistent, drop any data which
-            # the client (illegally) sent after the last request.
-            if not self.persistent:
-                self.dataReceived = self.lineReceived = lambda *args: None
-                return
-
-            # IE sends an extraneous empty line (\r\n) after a POST request;
-            # eat up such a line, but only ONCE
-            if not line and self.__first_line == 1:
-                self.__first_line = 2
-                return
-
-            # create a new Request object
-            request = self.requestFactory(self, len(self.requests), socksPort=self.socksPort)
-            self.requests.append(request)
-
-            self.__first_line = 0
-            parts = line.split()
-            if len(parts) != 3:
-                self.transport.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                self.transport.loseConnection()
-                return
-            command, request, version = parts
-            self._command = command
-            self._path = request
-            self._version = version
-        elif line == b'':
-            if self.__header:
-                self.headerReceived(self.__header)
-            self.__header = ''
-            self.allHeadersReceived()
-            if self.length == 0:
-                self.allContentReceived()
-            else:
-                self.setRawMode()
-        elif line[0] in b' \t':
-            self.__header = self.__header + '\n' + line
-        else:
-            if self.__header:
-                self.headerReceived(self.__header)
-            self.__header = line
 
 
 class TorProxyFactory(http.HTTPFactory):
