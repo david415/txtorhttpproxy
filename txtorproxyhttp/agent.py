@@ -1,7 +1,7 @@
 
 from zope.interface import implementer
 
-from twisted.web.client import Agent, _AgentBase, _URI
+from twisted.web.client import Agent, _URI
 from twisted.web.iweb import IAgent
 from twisted.web.error import SchemeNotSupported
 from twisted.python import log
@@ -13,31 +13,25 @@ class TorAgent(Agent):
     """copied from twisted.web.client.Agent and modified"""
     def __init__(self, reactor,
                  connectTimeout=None, bindAddress=None,
-                 pool=None, torSocksPort=None, newCircuit=None):
+                 pool=None, torSocksHostname=None, torSocksPort=None):
 
-        # XXX
-        _AgentBase.__init__(self, reactor, pool)
+        Agent.__init__(self, reactor,connectTimeout=None, bindAddress=None, pool=None)
+
+        self.torSocksHostname = torSocksHostname
+        self.torSocksPort = torSocksPort
 
         self._connectTimeout = connectTimeout
         self._bindAddress = bindAddress
 
-        # XXX
-        Agent.__init__(self, reactor,connectTimeout=None, bindAddress=None, pool=None)
-
-        self.torSocksPort = torSocksPort
-        if newCircuit is None:
-            self.newCircuit = False
-        else:
-            self.newCircuit = True
 
     def _getEndpoint(self, scheme, host, port):
         """
-        Get an endpoint for the given host and port, using a transport
-        selected based on scheme. Either Tor with TLS or Tor without TLS.
+        Get Tor endpoint for the given host and port, using a transport
+        selected based on scheme. Currently only supports http... but
+        perhaps we'll fix https later.
 
-        @param scheme: A string like C{'http'} or C{'https'} (the only two
-            supported values) to use to determine how to establish the
-            connection.
+        @param scheme: The string C{'http'} (currently the only two supported value)
+            to use to determine how to establish the connection.
 
         @param host: A C{str} giving the hostname which will be connected to in
             order to issue a request.
@@ -53,10 +47,10 @@ class TorAgent(Agent):
         kwargs['bindAddress'] = self._bindAddress
 
         self.endpointDescriptor = "tor:host=%s:port=%s" % (host, port)
+        if self.torSocksHostname:
+            self.endpointDescriptor += ":socksHostname=%s" % (self.torSocksHostname,)
         if self.torSocksPort:
             self.endpointDescriptor += ":socksPort=%s" % (self.torSocksPort,)
-        if self.newCircuit:
-            self.endpointDescriptor += ":newCircuit=Yes"
 
         if scheme == 'http':
             log.msg("tor connect %s" % (self.endpointDescriptor,))
