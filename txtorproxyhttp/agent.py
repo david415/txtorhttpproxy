@@ -1,17 +1,11 @@
 
-import sys
 from zope.interface import implementer
 
-from twisted.internet import reactor
-from twisted.web.client import Agent, BrowserLikePolicyForHTTPS, _AgentBase, _URI
+from twisted.web.client import Agent, _AgentBase, _URI
 from twisted.web.iweb import IAgent
-from twisted.web.http_headers import Headers
-from twisted.web.iweb import IPolicyForHTTPS
 from twisted.web.error import SchemeNotSupported
 from twisted.python import log
 from twisted.internet.endpoints import clientFromString
-
-from txsocksx.tls import TLSWrapClientEndpoint
 
 
 @implementer(IAgent)

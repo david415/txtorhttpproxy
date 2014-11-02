@@ -7,7 +7,8 @@ from twisted.internet import reactor
 from twisted.internet.endpoints import serverFromString
 from twisted.python import log
 
-from txtorproxyhttp import TorProxyFactory
+from txtorproxyhttp import AgentProxyFactory
+from txtorproxyhttp import TorAgent
 
 
 def main():
@@ -25,7 +26,8 @@ def main():
             log.startLogging(open(args.log,'a'))
 
     serverEndpoint = serverFromString(reactor, args.serverEndpoint)
-    connectDeferred = serverEndpoint.listen(TorProxyFactory(socksPort=args.socksPort))
+    torAgent = TorAgent(reactor)
+    connectDeferred = serverEndpoint.listen(AgentProxyFactory(torAgent))
 
     # XXX
     def clientConnectionFailed(factory, reason):

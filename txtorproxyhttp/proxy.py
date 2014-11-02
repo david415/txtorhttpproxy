@@ -1,15 +1,10 @@
 
-import urlparse
-
-from twisted.web import proxy, http
-from twisted.internet import reactor, protocol, defer
-from twisted.internet.endpoints import clientFromString
+from twisted.web import http
+from twisted.internet import reactor, protocol
 from twisted.python import log
-from twisted.web.client import PartialDownloadError
 from twisted.web.http import PotentialDataLoss
 from twisted.web._newclient import ResponseDone
 
-from .agent import TorAgent
 
 # yay debugging
 #defer.setDebugging(True)
@@ -21,7 +16,6 @@ class ProxyBodyProtocol(protocol.Protocol):
         self.request = request
 
     def dataReceived(self, data):
-        log.msg(data)
         self.request.write(data)
 
     def connectionLost(self, reason):
@@ -38,7 +32,7 @@ class ProxyBodyProtocol(protocol.Protocol):
             log.err(reason)
 
 
-class TorProxyRequest(http.Request):
+class AgentProxyRequest(http.Request):
     """copied from twisted.web.proxy.ProxyRequest... and modified"""
 
     ports = {'http': 80}
@@ -52,10 +46,6 @@ class TorProxyRequest(http.Request):
 
         log.msg("Request %s from %s" % (self.uri, self.getClientIP()))
 
-        headers = self.getAllHeaders().copy()
-        if 'host' not in headers:
-            headers['host'] = host
-
         # XXX
         #self.content.seek(0, 0)
         #s = self.content.read()
@@ -63,12 +53,11 @@ class TorProxyRequest(http.Request):
         log.msg("URI %s" % self.uri)
 
         self.content.seek(0, 0)
-        s = self.content.read()
 
-        log.msg("request content %s" % s)
+        # XXX handle POST?
+        #s = self.content.read()
 
-        agent = TorAgent(reactor)
-        d = agent.request(self.method, self.uri, self.requestHeaders, None)
+        d = self.agent.request(self.method, self.uri, self.requestHeaders, None)
 
         def agentCallback(response):
             log.msg(response)
@@ -78,9 +67,7 @@ class TorProxyRequest(http.Request):
                 log.msg("YOOYO name %s values %s" % (name, values))
                 self.responseHeaders.setRawHeaders(name, values)
 
-            log.msg("before deliverBody")
             response.deliverBody(ProxyBodyProtocol(self))
-            log.msg("after deliverBody")
 
         def agentErrback(failure):
             log.err(failure)
@@ -89,8 +76,8 @@ class TorProxyRequest(http.Request):
         d.addCallbacks(agentCallback, agentErrback)
 
 
-class TorProxy(http.HTTPChannel):
-    requestFactory = TorProxyRequest
+class AgentProxy(http.HTTPChannel):
+    requestFactory = AgentProxyRequest
 
     # XXX can we get rid of these class attributes and make
     # this code work with the parent's class attributes?
@@ -101,17 +88,16 @@ class TorProxy(http.HTTPChannel):
     __first_line = 1
     __content = None
 
-    def __init__(self, socksPort=None):
-        self.socksPort = socksPort
-        self.requestFactory.socksPort = self.socksPort
+    def __init__(self, agent):
+        self.requestFactory.agent = agent
         http.HTTPChannel.__init__(self)
 
 
-class TorProxyFactory(http.HTTPFactory):
+class AgentProxyFactory(http.HTTPFactory):
 
-    def __init__(self, socksPort=None):
-        self.socksPort = socksPort
+    def __init__(self, agent):
+        self.agent = agent
         http.HTTPFactory.__init__(self)
 
     def buildProtocol(self, addr):
-        return TorProxy(socksPort=self.socksPort)
+        return AgentProxy(self.agent)
