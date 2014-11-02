@@ -18,28 +18,14 @@ from txsocksx.tls import TLSWrapClientEndpoint
 class TorAgent(Agent):
     """copied from twisted.web.client.Agent and modified"""
     def __init__(self, reactor,
-                 contextFactory=BrowserLikePolicyForHTTPS(),
                  connectTimeout=None, bindAddress=None,
                  pool=None, torSocksPort=None, newCircuit=None):
 
         _AgentBase.__init__(self, reactor, pool)
-        if not IPolicyForHTTPS.providedBy(contextFactory):
-            warnings.warn(
-                repr(contextFactory) +
-                " was passed as the HTTPS policy for an Agent, but it does "
-                "not provide IPolicyForHTTPS.  Since Twisted 14.0, you must "
-                "pass a provider of IPolicyForHTTPS.",
-                stacklevel=2, category=DeprecationWarning
-            )
-            contextFactory = _DeprecatedToCurrentPolicyForHTTPS(contextFactory)
-
-        self._policyForHTTPS = contextFactory
         self._connectTimeout = connectTimeout
         self._bindAddress = bindAddress
 
-        Agent.__init__(self, reactor, contextFactory=BrowserLikePolicyForHTTPS(),
-                 connectTimeout=None, bindAddress=None,
-                 pool=None)
+        Agent.__init__(self, reactor,connectTimeout=None, bindAddress=None, pool=None)
 
         self.torSocksPort = torSocksPort
         if newCircuit is None:
@@ -78,20 +64,14 @@ class TorAgent(Agent):
         if scheme == 'http':
             log.msg("tor connect %s" % (self.endpointDescriptor,))
             return clientFromString(self._reactor, self.endpointDescriptor)
-        elif scheme == 'https':
-            log.msg("tor connect with tls %s" % (self.endpointDescriptor,))
-            return TLSWrapClientEndpoint(clientFromString(self._reactor, self.endpointDescriptor))
         else:
             raise SchemeNotSupported("Unsupported scheme: %r" % (scheme,))
 
 
     def request(self, method, uri, headers=None, bodyProducer=None):
         parsedURI = _URI.fromBytes(uri)
-        try:
-            endpoint = self._getEndpoint(parsedURI.scheme, parsedURI.host,
+        endpoint = self._getEndpoint(parsedURI.scheme, parsedURI.host,
                                          parsedURI.port)
-        except SchemeNotSupported:
-            return defer.fail(Failure())
         key = (parsedURI.scheme, parsedURI.host, parsedURI.port)
         return self._requestWithEndpoint(key, endpoint, method, parsedURI,
                                          headers, bodyProducer,
