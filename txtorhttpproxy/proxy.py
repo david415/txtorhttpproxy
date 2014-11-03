@@ -12,7 +12,6 @@ from twisted.web._newclient import ResponseDone
 class ProxyBodyProtocol(protocol.Protocol):
 
     def __init__(self, request):
-        log.msg("proxybodyprotocol init")
         self.request = request
 
     def dataReceived(self, data):
@@ -23,13 +22,10 @@ class ProxyBodyProtocol(protocol.Protocol):
         Deliver the accumulated response bytes to the waiting L{Deferred}, if
         the response body has been completely received without error.
         """
-        log.msg("connection lost")
         if reason.check(ResponseDone):
             self.request.finish()
-
         elif reason.check(PotentialDataLoss):
-            log.err("connectionLost")
-            log.err(reason)
+            log.err("ProxyBodyProtocol connectionLost: %s" % reason)
 
 
 class AgentProxyRequest(http.Request):
@@ -45,32 +41,17 @@ class AgentProxyRequest(http.Request):
     def process(self):
 
         log.msg("Request %s from %s" % (self.uri, self.getClientIP()))
-
-        # XXX
-        #self.content.seek(0, 0)
-        #s = self.content.read()
-
-        log.msg("URI %s" % self.uri)
-
-        self.content.seek(0, 0)
-
-        # XXX handle POST?
-        #s = self.content.read()
-
         d = self.agent.request(self.method, self.uri, self.requestHeaders, None)
 
         def agentCallback(response):
-            log.msg(response)
             self.setResponseCode(response.code, response.phrase)
-
             for name, values in response.headers.getAllRawHeaders():
-                log.msg("YOOYO name %s values %s" % (name, values))
                 self.responseHeaders.setRawHeaders(name, values)
 
             response.deliverBody(ProxyBodyProtocol(self))
 
         def agentErrback(failure):
-            log.err(failure)
+            log.err("AgentProxyRequest failure: %s" % failure)
             return failure
 
         d.addCallbacks(agentCallback, agentErrback)

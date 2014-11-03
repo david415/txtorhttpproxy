@@ -6,4 +6,4 @@ from . import agent
 from .proxy import AgentProxyFactory, AgentProxy
 from .agent import TorAgent
 
-__all__ = ['proxy', 'agent', 'AgentProxyFactory', 'AgentProxy', 'AgentProxyRequest']
+__all__ = ['proxy', 'agent', 'AgentProxyFactory', 'AgentProxy']
