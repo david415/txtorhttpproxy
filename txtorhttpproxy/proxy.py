@@ -1,6 +1,7 @@
 
 from zope.interface import implementer
 
+from twisted.internet import defer
 from twisted.web import http
 from twisted.internet import reactor, protocol
 from twisted.python import log
@@ -49,7 +50,7 @@ class ProxyBodyProtocol(protocol.Protocol):
 
 
 @implementer(IBodyProducer)
-class AgentProxyRequestBodyProducer(object):
+class StringProducer(object):
 
     def __init__(self, body):
         self.body = body
@@ -57,7 +58,7 @@ class AgentProxyRequestBodyProducer(object):
 
     def startProducing(self, consumer):
         consumer.write(self.body)
-        return succeed(None)
+        return defer.succeed(None)
 
     def pauseProducing(self):
         pass
@@ -93,14 +94,13 @@ class AgentProxyRequest(http.Request):
 
         log.msg("AgentProxyRequest: requested uri %s from %s" % (self.uri, self.getClientIP()))
 
-        # XXX proxy POST requests
-
+        # XXX proxy all requests with a bodyProducer
+        self.content.seek(0,0)
         content = self.content.read()
-        log.msg("CONTENTTTTTTTTTTTTTT %s" % content)
-        bodyProducer = AgentProxyRequestBodyProducer(content)
+        bodyProducer = StringProducer(content)
+        self.content.seek(0,0)
 
         d = self.agent.request(self.method, self.uri, self.requestHeaders, bodyProducer)
-        #d = self.agent.request(self.method, self.uri, self.requestHeaders, None)
 
         def agentCallback(response):
             log.msg(response)
