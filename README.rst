@@ -1,6 +1,6 @@
 
 ==============
-txtorproxyhttp
+txtorhttpproxy
 ==============
 
 overview
@@ -18,9 +18,9 @@ txtorsocksx - https://github.com/david415/txtorsocksx
 install
 -------
 
-you can install txtorproxyhttp in your python virtual environment like this:
+you can install txtorhttpproxy in your python virtual environment like this:
 
-   $ pip install git+https://github.com/david415/txtorproxyhttp.git
+   $ pip install git+https://github.com/david415/txtorhttpproxy.git
 
 
 

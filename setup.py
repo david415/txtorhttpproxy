@@ -5,12 +5,12 @@ from setuptools import setup
 __version__ = '0.0.1'
 __author__ = 'David Stainton'
 __contact__ = 'dstainton415@gmail.com'
-__url__ = 'https://github.com/david415/txtorproxyhttp'
+__url__ = 'https://github.com/david415/txtorhttpproxy'
 __license__ = 'GPL'
 __copyright__ = 'Copyright 2014'
 
 setup(
-    name='txtorproxyhttp',
+    name='txtorhttpproxy',
     description='Tor-friendly Twisted http proxy classes',
     version = __version__,
     long_description = open('README.rst', 'r').read(),
@@ -35,5 +35,5 @@ setup(
     url = __url__,
     license = __license__,
     install_requires=open('requirements.txt', 'rb').read().split(),
-    packages=['txtorproxyhttp'],
+    packages=['txtorhttpproxy'],
 )

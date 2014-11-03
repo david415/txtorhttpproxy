@@ -7,8 +7,8 @@ from twisted.internet import reactor
 from twisted.internet.endpoints import serverFromString
 from twisted.python import log
 
-from txtorproxyhttp import AgentProxyFactory
-from txtorproxyhttp import TorAgent
+from txtorhttpproxy import AgentProxyFactory
+from txtorhttpproxy import TorAgent
 
 
 def main():

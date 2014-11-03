@@ -8,8 +8,8 @@ from twisted.internet.endpoints import serverFromString, clientFromString
 from twisted.python import log
 from twisted.web.client import HTTPConnectionPool
 from twisted.web.client import ProxyAgent
-from txtorproxyhttp import AgentProxy, AgentProxyFactory
-from txtorproxyhttp import TorAgent
+from txtorhttpproxy import AgentProxy, AgentProxyFactory
+from txtorhttpproxy import TorAgent
 
 
 def main():
