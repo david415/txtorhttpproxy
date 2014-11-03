@@ -36,4 +36,5 @@ setup(
     license = __license__,
     install_requires=open('requirements.txt', 'rb').read().split(),
     packages=['txtorhttpproxy'],
+    scripts=['bin/torhttpproxy.py']
 )
