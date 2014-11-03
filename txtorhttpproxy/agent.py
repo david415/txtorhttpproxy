@@ -13,13 +13,12 @@ class TorAgent(Agent):
     """copied from twisted.web.client.Agent and modified"""
     def __init__(self, reactor,
                  connectTimeout=None, bindAddress=None,
-                 pool=None, torSocksHostname=None, torSocksPort=None, userAgent=None):
+                 pool=None, torSocksHostname=None, torSocksPort=None):
 
         Agent.__init__(self, reactor,connectTimeout=None, bindAddress=None, pool=None)
 
         self.torSocksHostname = torSocksHostname
         self.torSocksPort = torSocksPort
-        self.userAgent = userAgent
 
         self._connectTimeout = connectTimeout
         self._bindAddress = bindAddress
@@ -54,18 +53,16 @@ class TorAgent(Agent):
             self.endpointDescriptor += ":socksPort=%s" % (self.torSocksPort,)
 
         if scheme == 'http':
+            log.msg("tor connect %s" % (self.endpointDescriptor,))
             return clientFromString(self._reactor, self.endpointDescriptor)
         else:
             raise SchemeNotSupported("Unsupported scheme: %r" % (scheme,))
 
 
     def request(self, method, uri, headers=None, bodyProducer=None):
-        if self.userAgent is not None:
-            headers['user-agent'] = [self.userAgent]
         parsedURI = _URI.fromBytes(uri)
         endpoint = self._getEndpoint(parsedURI.scheme, parsedURI.host,
                                          parsedURI.port)
         key = (parsedURI.scheme, parsedURI.host, parsedURI.port)
-        log.msg(headers)
         return self._requestWithEndpoint(key, endpoint, method, parsedURI,
                                          headers, bodyProducer, parsedURI.originForm)
