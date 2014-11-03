@@ -6,34 +6,30 @@ from twisted.web.http import PotentialDataLoss
 from twisted.web._newclient import ResponseDone
 
 
-# yay debugging
-#defer.setDebugging(True)
-
 class ProxyBodyProtocol(protocol.Protocol):
 
     def __init__(self, request):
-        log.msg("proxybodyprotocol init")
         self.request = request
 
     def dataReceived(self, data):
         self.request.write(data)
 
     def connectionLost(self, reason):
-        """
-        Deliver the accumulated response bytes to the waiting L{Deferred}, if
-        the response body has been completely received without error.
-        """
-        log.msg("connection lost")
-        if reason.check(ResponseDone):
-            self.request.finish()
+        # XXX
+        # do we care why a connection was lost?
+        # i should probably rewrite this method
 
+        self.request.finish()
+        if reason.check(ResponseDone):
+            # XXX
+            pass
         elif reason.check(PotentialDataLoss):
-            log.err("connectionLost")
-            log.err(reason)
+            log.err("ProxyBodyProtocol connectionLost: PotentialDataLoss: %s" % (reason,))
+        else:
+            log.err("ProxyBodyProtocol connectionLost: unknown reason: %s" % (reason,))
 
 
 class AgentProxyRequest(http.Request):
-    """copied from twisted.web.proxy.ProxyRequest... and modified"""
 
     ports = {'http': 80}
 
@@ -44,18 +40,9 @@ class AgentProxyRequest(http.Request):
 
     def process(self):
 
-        log.msg("Request %s from %s" % (self.uri, self.getClientIP()))
+        log.msg("AgentProxyRequest: requested uri %s from %s" % (self.uri, self.getClientIP()))
 
-        # XXX
-        #self.content.seek(0, 0)
-        #s = self.content.read()
-
-        log.msg("URI %s" % self.uri)
-
-        self.content.seek(0, 0)
-
-        # XXX handle POST?
-        #s = self.content.read()
+        # XXX TODO proxy POST requests
 
         d = self.agent.request(self.method, self.uri, self.requestHeaders, None)
 
@@ -64,13 +51,12 @@ class AgentProxyRequest(http.Request):
             self.setResponseCode(response.code, response.phrase)
 
             for name, values in response.headers.getAllRawHeaders():
-                log.msg("YOOYO name %s values %s" % (name, values))
                 self.responseHeaders.setRawHeaders(name, values)
 
             response.deliverBody(ProxyBodyProtocol(self))
 
         def agentErrback(failure):
-            log.err(failure)
+            log.err("AgentProxyRequest: proxied response failure: %s" % (failure,))
             return failure
 
         d.addCallbacks(agentCallback, agentErrback)

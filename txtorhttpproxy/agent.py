@@ -53,7 +53,6 @@ class TorAgent(Agent):
             self.endpointDescriptor += ":socksPort=%s" % (self.torSocksPort,)
 
         if scheme == 'http':
-            log.msg("tor connect %s" % (self.endpointDescriptor,))
             return clientFromString(self._reactor, self.endpointDescriptor)
         else:
             raise SchemeNotSupported("Unsupported scheme: %r" % (scheme,))
