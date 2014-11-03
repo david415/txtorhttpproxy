@@ -14,8 +14,9 @@ from txtorhttpproxy import AgentProxyFactory
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("serverEndpoint")
-    parser.add_argument("--socksPort", help="local Tor SOCKS port")
+    parser.add_argument("serverEndpoint", help="A valid Twisted server endpoint descriptor string such as 'tcp:interface=127.0.0.1:8080'")
+    parser.add_argument("--torSocksHostname", default=None, help="local Tor SOCKS hostname eg 127.0.0.1")
+    parser.add_argument("--torSocksPort", default=None, help="local Tor SOCKS port eg 9050")
     parser.add_argument("--log", help="write logs. use '-' for stdout.")
     args = parser.parse_args()
 
@@ -26,7 +27,7 @@ def main():
             log.startLogging(open(args.log,'a'))
 
     serverEndpoint = serverFromString(reactor, args.serverEndpoint)
-    torAgent = TorAgent(reactor)
+    torAgent = TorAgent(reactor, torSocksHostname=args.torSocksHostname, torSocksPort=args.torSocksPort)
     connectDeferred = serverEndpoint.listen(AgentProxyFactory(torAgent))
 
     # XXX
