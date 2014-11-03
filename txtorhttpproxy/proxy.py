@@ -35,10 +35,8 @@ class ProxyBodyProtocol(protocol.Protocol):
         # do we care why a connection was lost?
         # i should probably rewrite this method
 
-        self.request.finish()
         if reason.check(ResponseDone):
-            # XXX
-            pass
+            self.request.finish()
         elif reason.check(PotentialDataLoss):
             log.err("ProxyBodyProtocol connectionLost: PotentialDataLoss: %s" % (reason,))
         else:
