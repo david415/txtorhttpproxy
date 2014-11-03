@@ -10,16 +10,56 @@ from twisted.internet.endpoints import clientFromString
 
 @implementer(IAgent)
 class TorAgent(Agent):
-    """copied from twisted.web.client.Agent and modified"""
+    """L{TorAgent} is a very basic Torified HTTP client. Currently it supports
+    I{HTTP} but hopefully soon will also support I{HTTPS} scheme URIs.
+
+    This class was inspired by the core Twisted HTTP Agent class
+    (twisted.web.client.Agent)... and is thus a drop-in replacement
+    for the Agent class.
+
+    @ivar _pool: An L{HTTPConnectionPool} instance.
+
+    @ivar _connectTimeout: If not C{None}, the timeout passed to
+    L{TCP4ClientEndpoint} or C{SSL4ClientEndpoint} for specifying the
+    connection timeout.
+
+    @ivar _bindAddress: If not C{None}, the address passed to
+    L{TCP4ClientEndpoint} or C{SSL4ClientEndpoint} for specifying the local
+    address to bind to.
+    """
     def __init__(self, reactor,
                  connectTimeout=None, bindAddress=None,
                  pool=None, torSocksHostname=None, torSocksPort=None):
+        """
+        Create a L{TorAgent}.
 
+        @param reactor: A provider of
+            L{twisted.internet.interfaces.IReactorTCP}
+            to place outgoing connections.
+        @type reactor: L{twisted.internet.interfaces.IReactorTCP}.
+
+        @param connectTimeout: The amount of time that this L{Agent} will wait
+            for the peer to accept a connection.
+        @type connectTimeout: L{float}
+
+        @param bindAddress: The local address for client sockets to bind to.
+        @type bindAddress: L{bytes}
+
+        @param pool: An L{HTTPConnectionPool} instance, or C{None}, in which
+            case a non-persistent L{HTTPConnectionPool} instance will be
+            created.
+        @type pool: L{HTTPConnectionPool}
+
+        @param torSocksHostname: A C{str} giving the tor SOCKS hostname
+            that this TorAgent will use for outbound Tor connections.
+
+        @param torSocksPort: An C{int} giving the SOCKS port number that will be used
+            for outbound Tor connections.
+        """
         Agent.__init__(self, reactor,connectTimeout=None, bindAddress=None, pool=None)
 
         self.torSocksHostname = torSocksHostname
         self.torSocksPort = torSocksPort
-
         self._connectTimeout = connectTimeout
         self._bindAddress = bindAddress
 
@@ -59,6 +99,17 @@ class TorAgent(Agent):
 
 
     def request(self, method, uri, headers=None, bodyProducer=None):
+        """
+        Issue a request to the server indicated by the given C{uri}.
+
+        An existing connection from the connection pool may be used or a new one may be created.
+        Without additional modifications this connection pool may not be very useful because
+        each connection in the pool will use the same Tor circuit.
+
+        Currently only the I{HTTP} scheme is supported in C{uri}.
+
+        @see: L{twisted.web.iweb.IAgent.request}
+        """
         parsedURI = _URI.fromBytes(uri)
         endpoint = self._getEndpoint(parsedURI.scheme, parsedURI.host,
                                          parsedURI.port)
