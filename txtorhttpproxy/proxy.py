@@ -1,9 +1,13 @@
 
+from zope.interface import implementer
+
 from twisted.web import http
 from twisted.internet import reactor, protocol
 from twisted.python import log
 from twisted.web.http import PotentialDataLoss
 from twisted.web._newclient import ResponseDone
+from twisted.web.iweb import IBodyProducer
+
 
 
 class ProxyBodyProtocol(protocol.Protocol):
@@ -43,6 +47,24 @@ class ProxyBodyProtocol(protocol.Protocol):
             log.err("ProxyBodyProtocol connectionLost: unknown reason: %s" % (reason,))
 
 
+@implementer(IBodyProducer)
+class AgentProxyRequestBodyProducer(object):
+
+    def __init__(self, body):
+        self.body = body
+        self.length = len(body)
+
+    def startProducing(self, consumer):
+        consumer.write(self.body)
+        return succeed(None)
+
+    def pauseProducing(self):
+        pass
+
+    def stopProducing(self):
+        pass
+
+
 class AgentProxyRequest(http.Request):
     """
     A HTTP Request that proxies.
@@ -70,9 +92,14 @@ class AgentProxyRequest(http.Request):
 
         log.msg("AgentProxyRequest: requested uri %s from %s" % (self.uri, self.getClientIP()))
 
-        # XXX TODO proxy POST requests
+        # XXX proxy POST requests
 
-        d = self.agent.request(self.method, self.uri, self.requestHeaders, None)
+        content = self.content.read()
+        log.msg("CONTENTTTTTTTTTTTTTT %s" % content)
+        bodyProducer = AgentProxyRequestBodyProducer(content)
+
+        d = self.agent.request(self.method, self.uri, self.requestHeaders, bodyProducer)
+        #d = self.agent.request(self.method, self.uri, self.requestHeaders, None)
 
         def agentCallback(response):
             log.msg(response)
