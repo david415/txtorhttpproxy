@@ -1,9 +1,12 @@
 
-from zope.interface import implementer
+from zope.interface import implementer, directlyProvides
 
 from twisted.internet import defer
 from twisted.web import http
 from twisted.internet import reactor, protocol
+from twisted.internet.endpoints import clientFromString
+from twisted.protocols.portforward import Proxy
+from twisted.protocols.policies import ProtocolWrapper, WrappingFactory
 from twisted.python import log
 from twisted.web.http import PotentialDataLoss
 from twisted.web._newclient import ResponseDone
@@ -67,6 +70,51 @@ class StringProducer(object):
         pass
 
 
+
+class ProxyEndpointProtocol(Proxy):
+
+    def connectionMade(self):
+        log.msg("ProxyEndpointProtocol connectionMade")
+        if self.factory.peerFactory.protocolInstance is None:
+            self.transport.pauseProducing()
+        else:
+            self.peer.setPeer(self)
+            self.transport.registerProducer(self.peer.transport, True)
+            self.peer.transport.registerProducer(self.transport, True)
+            self.peer.transport.resumeProducing()
+
+    def connectionLost(self, reason):
+        log.msg("ProxyEndpointProtocol connectionLost")
+        self.transport.loseConnection()
+        if self.factory.handleLostConnection is not None:
+            self.factory.handleLostConnection()
+
+
+
+class ProxyEndpointProtocolFactory(protocol.Factory):
+
+    protocol = ProxyEndpointProtocol
+
+    def __init__(self, handleLostConnection=None):
+        log.msg("ProxyEndpointProtocolFactory __init__")
+        self.peerFactory = None
+        self.protocolInstance = None
+        self.handleLostConnection = handleLostConnection
+
+    def setPeerFactory(self, peerFactory):
+        log.msg("ProxyEndpointProtocolFactory setPeerFactory")
+        self.peerFactory = peerFactory
+
+    def buildProtocol(self, *args, **kw):
+        log.msg("ProxyEndpointProtocolFactory buildProtocol")
+        self.protocolInstance = protocol.Factory.buildProtocol(self, *args, **kw)
+
+        if self.peerFactory.protocolInstance is not None:
+            self.protocolInstance.setPeer(self.peerFactory.protocolInstance)
+        return self.protocolInstance
+
+
+
 class AgentProxyRequest(http.Request):
     """
     A HTTP Request that proxies.
@@ -84,6 +132,14 @@ class AgentProxyRequest(http.Request):
         """
         http.Request.__init__(self, channel, queued)
 
+
+    def requestReceived(self, command, path, version):
+        log.msg("AgentProxyRequest: requestReceived: %s %s %s" % (command, path, version))
+
+        self.command = command
+        http.Request.requestReceived(self, command, path, version)
+
+
     def process(self):
         """
         Our parent class calls this method when our helper class
@@ -91,6 +147,45 @@ class AgentProxyRequest(http.Request):
         We then set our response attributes such as response code, phrase
         and then send the data to the requestor.
         """
+
+        if self.command == 'CONNECT':
+            log.msg("CONNECT command received")
+            #self.finish()
+
+            def handleError():
+                log.err("proxy fail")
+
+            log.msg("HANDLE CONNECT METHOD. proxy!")
+
+            proxyPeerFactory = ProxyEndpointProtocolFactory(handleLostConnection=handleError)
+            proxyLocalFactory = ProxyEndpointProtocolFactory(handleLostConnection=handleError)
+
+            # XXX must sanitize path
+            torEndpointDescriptor = "tor:%s" % self.path
+            log.msg(torEndpointDescriptor)
+            proxyPeerEndpoint = clientFromString(reactor, torEndpointDescriptor)
+            log.msg("proxyPeerEndpoint: %s" % proxyPeerEndpoint)
+
+            log.msg("agentProxy.transport %s" % self.agentProxyProtocol.transport)
+            clientTransport = self.agentProxyProtocol.transport
+            #clientTransport.unregisterProducer()
+            self.agentProxyProtocol.connectionLost(None)
+
+            proxyLocalFactory.setPeerFactory(proxyPeerFactory)
+            proxyPeerFactory.setPeerFactory(proxyLocalFactory)
+
+            log.msg("connect the local server transport with the proxyLocalProtocol")
+
+            proxyLocalProtocol = ProxyEndpointProtocol()
+            proxyLocalProtocol.factory = proxyLocalFactory
+            proxyLocalFactory.protocolInstance = proxyLocalProtocol
+            proxyLocalProtocol.makeConnection(clientTransport)
+
+            log.msg("call connection method on tor endpoint")
+            proxyPeerConnectDeferred = proxyPeerEndpoint.connect(proxyPeerFactory)
+            proxyPeerConnectDeferred.addErrback(handleError)
+
+            return
 
         log.msg("AgentProxyRequest: requested uri %s from %s" % (self.uri, self.getClientIP()))
 
@@ -142,6 +237,7 @@ class AgentProxy(http.HTTPChannel):
             to send outbound HTTP requests
         """
         self.requestFactory.agent = agent
+        self.requestFactory.agentProxyProtocol = self
         http.HTTPChannel.__init__(self)
 
 
