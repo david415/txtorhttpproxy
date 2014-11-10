@@ -6,10 +6,9 @@ import sys
 from twisted.internet import reactor
 from twisted.internet.endpoints import serverFromString
 from twisted.python import log
+from twisted.protocols.policies import ProtocolWrapper, WrappingFactory
 
-from txtorhttpproxy import TorAgent
-from txtorhttpproxy import AgentProxyFactory
-
+from txtorhttpproxy import TorAgent, AgentProxyFactory, PortforwardSwitchProtocol, ProtocolSwitcherWrappingFactory
 
 def main():
 
@@ -28,7 +27,11 @@ def main():
 
     serverEndpoint = serverFromString(reactor, args.serverEndpoint)
     torAgent = TorAgent(reactor, torSocksHostname=args.torSocksHostname, torSocksPort=args.torSocksPort)
-    connectDeferred = serverEndpoint.listen(AgentProxyFactory(torAgent))
+
+    wrappingFactory = ProtocolSwitcherWrappingFactory(AgentProxyFactory(torAgent))
+    wrappingFactory.protocol = PortforwardSwitchProtocol
+
+    connectDeferred = serverEndpoint.listen(wrappingFactory)
 
     # XXX
     def clientConnectionFailed(factory, reason):
