@@ -1,12 +1,12 @@
 
-from zope.interface import implementer, directlyProvides
+from zope.interface import implementer
 
 from twisted.internet import defer
 from twisted.web import http
 from twisted.internet import reactor, protocol
 from twisted.internet.endpoints import clientFromString
-from twisted.protocols.portforward import Proxy
-from twisted.protocols.policies import ProtocolWrapper, WrappingFactory
+from twisted.protocols.portforward import Proxy, ProxyClient
+from twisted.protocols.policies import ProtocolWrapper
 from twisted.python import log
 from twisted.web.http import PotentialDataLoss
 from twisted.web._newclient import ResponseDone
@@ -70,51 +70,35 @@ class StringProducer(object):
         pass
 
 
-
-class ShinyProxyClient(Proxy):
-    def connectionMade(self):
-        log.msg("ShinyProxyClient: connectionMade")
-        self.peer.setPeer(self)
-
-        # Wire this and the peer transport together to enable
-        # flow control (this stops connections from filling
-        # this proxy memory when one side produces data at a
-        # higher rate than the other can consume).
-
-        # XXX does one of these not belong here for our purposes
-        # of using the servers transport after it has already
-        # received an http connection?
-        self.transport.registerProducer(self.peer.transport, True)
-        self.peer.transport.registerProducer(self.transport, True)
-
-        # We're connected, everybody can read to their hearts content.
-        self.peer.transport.resumeProducing()
-
-
-
 class ShinyProxyClientFactory(protocol.Factory):
-    noisy = True
-    protocol = ShinyProxyClient
+    """
+    This is essentially the same as the Twisted ProxyClientFactory
+    except that it inherits from Factory instead of ClientFactory.
+
+    Twisted endpoint's (IStreamClientEndpoint) connect method expects
+    a Factory instance not ClientFactory:
+    https://twistedmatrix.com/documents/current/core/howto/endpoints.html
+    ...which is why we do not have a `clientConnectionFailed` method.
+    """
+    protocol = ProxyClient
 
     def setServer(self, server):
-        log.msg("ShinyProxyClientFactory: setServer: server %s" % server)
         self.server = server
 
     def buildProtocol(self, *args, **kw):
-        log.msg("ShinyProxyClientFactory: buildProtocol")
         prot = protocol.Factory.buildProtocol(self, *args, **kw)
         prot.setPeer(self.server)
         return prot
 
 
-
 class ProxyServerWithClientEndpoint(Proxy):
+    """
+    Proxy server protocol class for proxying to an endpoint.
+    """
 
     clientProtocolFactory = ShinyProxyClientFactory
 
     def connectionMade(self):
-        log.msg("ProxyServerWithClientEndpoint: connectionMade")
-
         # Don't read anything from the connecting client until we have
         # somewhere to send it to.
         self.transport.pauseProducing()
@@ -122,21 +106,26 @@ class ProxyServerWithClientEndpoint(Proxy):
         clientFactory = self.clientProtocolFactory()
         clientFactory.setServer(self)
 
-        log.msg("before client endpoint connect")
         clientFactory.connectDeferred = self.factory.clientEndpoint.connect(clientFactory)
-        clientFactory.connectDeferred.addErrback(lambda r: self.clientConnectionFailed(clientFactory, r))
+        clientFactory.connectDeferred.addErrback(lambda r: self.clientConnectionFailed(r))
 
-    def clientConnectionFailed(self, factory, reason):
-        log.err("ProxyServerWithClientEndpoint: clientConnectionFailed: %s %s" % (factory, reason))
+    def clientConnectionFailed(self, reason):
+        log.err("clientConnectionFailed: %s" % (reason,))
 
 
 class ProxyServerFactoryWithClientEndpoint(protocol.Factory):
-    """Factory for port forwarder."""
+    """
+    Factory for proxy server TCP port forwarder
+    """
 
     noisy = True
     protocol = ProxyServerWithClientEndpoint
 
     def __init__(self, clientEndpoint):
+        """
+        @param clientEndpoint: An instance of an object implementing
+        the IStreamClientEndpoint interface.
+        """
         self.clientEndpoint = clientEndpoint
 
 
@@ -154,21 +143,16 @@ class PortforwardSwitchProtocol(ProtocolWrapper):
         self.portforwardStarted = False
 
     def buildProxyProtocol(self, endpoint):
-        log.msg("PortforwardSwitchProtocol: buildProxyProtocol: endpoint %s" % endpoint)
-        # XXX
+        """
+        Make this protocol relay received data to our client endpoint
+        proxy protocol...
+        """
         self.proxyFactory = ProxyServerFactoryWithClientEndpoint(endpoint)
         self.proxyProtocol = self.proxyFactory.buildProtocol(None)
-        log.msg("PortforwardSwitchProtocol: before makeConnection")
         self.proxyProtocol.makeConnection(self.transport)
-
-        # XXX
         self.portforwardStarted = True
 
-
-    # Protocol relaying
-
     def dataReceived(self, data):
-        log.msg("PortforwardSwitchProtocol: dataReceived: data len %s" % len(data))
         if self.portforwardStarted:
             self.proxyProtocol.dataReceived(data)
         else:
@@ -178,24 +162,6 @@ class PortforwardSwitchProtocol(ProtocolWrapper):
         self.factory.unregisterProtocol(self)
         self.wrappedProtocol.connectionLost(reason)
 
-    # Transport relaying
-    # XXX needs rewrite?
-
-
-
-class ProtocolSwitcherWrappingFactory(WrappingFactory):
-
-    noisy = True
-
-    def __init__(self, wrappedFactory):
-        self.wrappedFactory = wrappedFactory
-        self.protocols = {}
-
-    def proxyError(ignore=None):
-        log.err('ProtocolSwitcherWrappingFactory: proxyError')
-
-    def buildProtocol(self, addr):
-        return self.protocol(self, self.wrappedFactory.buildProtocol(addr))
 
 
 class AgentProxyRequest(http.Request):
@@ -231,17 +197,17 @@ class AgentProxyRequest(http.Request):
         """
 
         if self.command == 'CONNECT':
-            log.msg("CONNECT command received")
-
             def handleError(ing=None):
                 log.err("endpoint proxy fail")
 
             # XXX todo: sanitize self.path?
             torEndpointDescriptor = "tor:%s" % self.path
-            log.msg(torEndpointDescriptor)
+            log.msg("proxying CONNECT command to %s" % torEndpointDescriptor)
+
             proxyPeerEndpoint = clientFromString(reactor, torEndpointDescriptor)
 
-            # XXX
+            # XXX todo - send 200 OK via callback after
+            # outbound proxy connection is established
             self.parentProtocol.wrapperProtocol.buildProxyProtocol(proxyPeerEndpoint)
             self.parentProtocol.transport.write(b"HTTP/1.1 200 OK\r\n\r\n")
             return
@@ -310,8 +276,6 @@ class AgentProxyFactory(http.HTTPFactory):
     @ivar agent: The IAgent instance used to make outbound HTTP requests
     on behalf of the HTTP client using this proxy
     """
-
-    noisy = True
 
     def __init__(self, agent):
         self.agent = agent

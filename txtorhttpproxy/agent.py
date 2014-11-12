@@ -4,7 +4,6 @@ from zope.interface import implementer
 from twisted.web.client import Agent, _URI
 from twisted.web.iweb import IAgent
 from twisted.web.error import SchemeNotSupported
-from twisted.python import log
 from twisted.internet.endpoints import clientFromString
 
 
