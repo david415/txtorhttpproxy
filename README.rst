@@ -26,7 +26,7 @@ txtorsocksx - https://github.com/david415/txtorsocksx
 install
 -------
 
-you can install txtorhttpproxy in your python virtual environment like this:
+you can install txtorhttpproxy in your python virtual environment like this::
 
    $ pip install git+https://github.com/david415/txtorsocksx.git
    $ pip install git+https://github.com/david415/txtorhttpproxy.git
@@ -36,6 +36,7 @@ you can install txtorhttpproxy in your python virtual environment like this:
 usage
 -----
 
+::
    (virtenv-txtorsocksx)human@computer:~/projects/txtorhttpproxy$ ./bin/torhttpproxy
    usage: torhttpproxy [-h] [--torSocksHostname TORSOCKSHOSTNAME]
                        [--torSocksPort TORSOCKSPORT] [--log LOG]
@@ -43,7 +44,7 @@ usage
    torhttpproxy: error: too few arguments
 
 
-run it like this:
+run it like this::
 
    (virtenv-txtorsocksx)human@computer:~/projects/txtorhttpproxy$ ./bin/torhttpproxy --log - tcp:interface=127.0.0.1:8080
    2014-11-12 16:30:13+0000 [-] Log opened.
