@@ -70,8 +70,10 @@ class StringProducer(object):
         pass
 
 
+
 class ShinyProxyClient(Proxy):
     def connectionMade(self):
+        log.msg("ShinyProxyClient: connectionMade")
         self.peer.setPeer(self)
 
         # Wire this and the peer transport together to enable
@@ -82,32 +84,37 @@ class ShinyProxyClient(Proxy):
         # XXX does one of these not belong here for our purposes
         # of using the servers transport after it has already
         # received an http connection?
-        ###self.transport.registerProducer(self.peer.transport, True)
+        self.transport.registerProducer(self.peer.transport, True)
         self.peer.transport.registerProducer(self.transport, True)
 
         # We're connected, everybody can read to their hearts content.
         self.peer.transport.resumeProducing()
 
+
+
 class ShinyProxyClientFactory(protocol.Factory):
-    noisey = True
+    noisy = True
     protocol = ShinyProxyClient
 
     def setServer(self, server):
+        log.msg("ShinyProxyClientFactory: setServer: server %s" % server)
         self.server = server
 
     def buildProtocol(self, *args, **kw):
+        log.msg("ShinyProxyClientFactory: buildProtocol")
         prot = protocol.Factory.buildProtocol(self, *args, **kw)
         prot.setPeer(self.server)
         return prot
+
+
 
 class ProxyServerWithClientEndpoint(Proxy):
 
     clientProtocolFactory = ShinyProxyClientFactory
 
-    def proxyConnectError(self, reason):
-        log.err("ProxyServerWithClientEndpoint: proxyConnectError: reason: %s" % reason)
-
     def connectionMade(self):
+        log.msg("ProxyServerWithClientEndpoint: connectionMade")
+
         # Don't read anything from the connecting client until we have
         # somewhere to send it to.
         self.transport.pauseProducing()
@@ -115,13 +122,18 @@ class ProxyServerWithClientEndpoint(Proxy):
         clientFactory = self.clientProtocolFactory()
         clientFactory.setServer(self)
 
+        log.msg("before client endpoint connect")
         clientFactory.connectDeferred = self.factory.clientEndpoint.connect(clientFactory)
-        clientFactory.connectDeferred.addErrback(self.proxyConnectError)
+        clientFactory.connectDeferred.addErrback(lambda r: self.clientConnectionFailed(clientFactory, r))
+
+    def clientConnectionFailed(self, factory, reason):
+        log.err("ProxyServerWithClientEndpoint: clientConnectionFailed: %s %s" % (factory, reason))
+
 
 class ProxyServerFactoryWithClientEndpoint(protocol.Factory):
     """Factory for port forwarder."""
 
-    noisey = True
+    noisy = True
     protocol = ProxyServerWithClientEndpoint
 
     def __init__(self, clientEndpoint):
@@ -142,9 +154,11 @@ class PortforwardSwitchProtocol(ProtocolWrapper):
         self.portforwardStarted = False
 
     def buildProxyProtocol(self, endpoint):
+        log.msg("PortforwardSwitchProtocol: buildProxyProtocol: endpoint %s" % endpoint)
         # XXX
         self.proxyFactory = ProxyServerFactoryWithClientEndpoint(endpoint)
         self.proxyProtocol = self.proxyFactory.buildProtocol(None)
+        log.msg("PortforwardSwitchProtocol: before makeConnection")
         self.proxyProtocol.makeConnection(self.transport)
 
         # XXX
@@ -154,6 +168,7 @@ class PortforwardSwitchProtocol(ProtocolWrapper):
     # Protocol relaying
 
     def dataReceived(self, data):
+        log.msg("PortforwardSwitchProtocol: dataReceived: data len %s" % len(data))
         if self.portforwardStarted:
             self.proxyProtocol.dataReceived(data)
         else:
@@ -170,7 +185,7 @@ class PortforwardSwitchProtocol(ProtocolWrapper):
 
 class ProtocolSwitcherWrappingFactory(WrappingFactory):
 
-    noisey = True
+    noisy = True
 
     def __init__(self, wrappedFactory):
         self.wrappedFactory = wrappedFactory
@@ -223,8 +238,8 @@ class AgentProxyRequest(http.Request):
 
             # XXX todo: sanitize self.path?
             torEndpointDescriptor = "tor:%s" % self.path
+            log.msg(torEndpointDescriptor)
             proxyPeerEndpoint = clientFromString(reactor, torEndpointDescriptor)
-
 
             # XXX
             self.parentProtocol.wrapperProtocol.buildProxyProtocol(proxyPeerEndpoint)
@@ -296,7 +311,7 @@ class AgentProxyFactory(http.HTTPFactory):
     on behalf of the HTTP client using this proxy
     """
 
-    noisey = True
+    noisy = True
 
     def __init__(self, agent):
         self.agent = agent
