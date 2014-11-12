@@ -8,9 +8,16 @@ from twisted.internet.endpoints import serverFromString
 from twisted.python import log
 from twisted.protocols.policies import ProtocolWrapper, WrappingFactory
 
+from twisted.internet.defer import setDebugging
+
 from txtorhttpproxy import TorAgent, AgentProxyFactory, PortforwardSwitchProtocol, ProtocolSwitcherWrappingFactory
 
+
+
+
 def main():
+
+    setDebugging(True)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("serverEndpoint", help="A valid Twisted server endpoint descriptor string such as 'tcp:interface=127.0.0.1:8080'")

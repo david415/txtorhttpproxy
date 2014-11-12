@@ -70,110 +70,117 @@ class StringProducer(object):
         pass
 
 
-
-class ProxyEndpointProtocol(Proxy):
-
+class ShinyProxyClient(Proxy):
     def connectionMade(self):
-        log.msg("ProxyEndpointProtocol connectionMade")
-        if self.factory.peerFactory.protocolInstance is None:
-            log.msg("before pauseProducing")
-            self.transport.pauseProducing()
-        else:
-            log.msg("before registerProducer")
-            self.peer.setPeer(self)
-            self.transport.registerProducer(self.peer.transport, True)
-            self.peer.transport.registerProducer(self.transport, True)
-            self.peer.transport.resumeProducing()
+        self.peer.setPeer(self)
 
-    def connectionLost(self, reason):
-        log.msg("ProxyEndpointProtocol connectionLost: %s" % reason)
-        self.transport.loseConnection()
-        if self.factory.handleLostConnection is not None:
-            self.factory.handleLostConnection()
+        # Wire this and the peer transport together to enable
+        # flow control (this stops connections from filling
+        # this proxy memory when one side produces data at a
+        # higher rate than the other can consume).
 
+        # XXX does one of these not belong here for our purposes
+        # of using the servers transport after it has already
+        # received an http connection?
+        ###self.transport.registerProducer(self.peer.transport, True)
+        self.peer.transport.registerProducer(self.transport, True)
 
+        # We're connected, everybody can read to their hearts content.
+        self.peer.transport.resumeProducing()
 
-class ProxyEndpointProtocolFactory(protocol.Factory):
+class ShinyProxyClientFactory(protocol.Factory):
+    noisey = True
+    protocol = ShinyProxyClient
 
-    protocol = ProxyEndpointProtocol
-
-    def __init__(self, handleLostConnection=None):
-        log.msg("ProxyEndpointProtocolFactory __init__")
-        self.peerFactory = None
-        self.protocolInstance = None
-        self.handleLostConnection = handleLostConnection
-
-    def setPeerFactory(self, peerFactory):
-        log.msg("ProxyEndpointProtocolFactory setPeerFactory")
-        self.peerFactory = peerFactory
+    def setServer(self, server):
+        self.server = server
 
     def buildProtocol(self, *args, **kw):
-        log.msg("ProxyEndpointProtocolFactory buildProtocol")
-        self.protocolInstance = protocol.Factory.buildProtocol(self, *args, **kw)
+        prot = protocol.Factory.buildProtocol(self, *args, **kw)
+        prot.setPeer(self.server)
+        return prot
 
-        if self.peerFactory.protocolInstance is not None:
-            log.msg("before factory call to protocol's setPeer")
-            self.protocolInstance.setPeer(self.peerFactory.protocolInstance)
-        return self.protocolInstance
+class ProxyServerWithClientEndpoint(Proxy):
+
+    clientProtocolFactory = ShinyProxyClientFactory
+
+    def proxyConnectError(self, reason):
+        log.err("ProxyServerWithClientEndpoint: proxyConnectError: reason: %s" % reason)
+
+    def connectionMade(self):
+        # Don't read anything from the connecting client until we have
+        # somewhere to send it to.
+        self.transport.pauseProducing()
+
+        clientFactory = self.clientProtocolFactory()
+        clientFactory.setServer(self)
+
+        clientFactory.connectDeferred = self.factory.clientEndpoint.connect(clientFactory)
+        clientFactory.connectDeferred.addErrback(self.proxyConnectError)
+
+class ProxyServerFactoryWithClientEndpoint(protocol.Factory):
+    """Factory for port forwarder."""
+
+    noisey = True
+    protocol = ProxyServerWithClientEndpoint
+
+    def __init__(self, clientEndpoint):
+        self.clientEndpoint = clientEndpoint
+
+
+# XXX todo - replace wrapper style with proxyForInterface?
+class PortforwardSwitchProtocol(ProtocolWrapper):
+    """
+    This class can wrap Twisted protocols to add support for switching to a
+    TCP port-forwarding proxy.
+    """
+
+    def __init__(self, factory, wrappedProtocol):
+        self.factory = factory
+        self.wrappedProtocol = wrappedProtocol
+        self.wrappedProtocol.wrapperProtocol = self
+        self.portforwardStarted = False
+
+    def buildProxyProtocol(self, endpoint):
+        # XXX
+        self.proxyFactory = ProxyServerFactoryWithClientEndpoint(endpoint)
+        self.proxyProtocol = self.proxyFactory.buildProtocol(None)
+        self.proxyProtocol.makeConnection(self.transport)
+
+        # XXX
+        self.portforwardStarted = True
+
+
+    # Protocol relaying
+
+    def dataReceived(self, data):
+        if self.portforwardStarted:
+            self.proxyProtocol.dataReceived(data)
+        else:
+            self.wrappedProtocol.dataReceived(data)
+
+    def connectionLost(self, reason):
+        self.factory.unregisterProtocol(self)
+        self.wrappedProtocol.connectionLost(reason)
+
+    # Transport relaying
+    # XXX needs rewrite?
 
 
 
-class ProtocolSwitcherWrappingFactory(WrappingFactory, ProxyEndpointProtocolFactory):
+class ProtocolSwitcherWrappingFactory(WrappingFactory):
+
+    noisey = True
 
     def __init__(self, wrappedFactory):
         self.wrappedFactory = wrappedFactory
         self.protocols = {}
 
+    def proxyError(ignore=None):
+        log.err('ProtocolSwitcherWrappingFactory: proxyError')
+
     def buildProtocol(self, addr):
-        protocol = self.protocol(self, self.wrappedFactory.buildProtocol(addr))
-        protocol.wrappedProtocol.wrapperProtocol = protocol
-        return protocol
-
-
-
-class PortforwardSwitchProtocol(ProtocolWrapper, ProxyEndpointProtocol):
-    """
-    This class can wrap Twisted protocols to add support for switching to a
-    TCP port-forwarding proxy.
-    """
-    portforwardStarted = False
-
-    def dataReceived(self, data):
-        if self.portforwardStarted:
-            ProxyEndpointProtocol.dataReceived(self, data)
-        else:
-            ProtocolWrapper.dataReceived(self, data)
-
-    def write(self, data):
-        if self.portforwardStarted:
-            ProxyEndpointProtocol.write(self, data)
-        else:
-            ProtocolWrapper.write(self, data)
-
-    def connectionMade(self):
-        if self.portforwardStarted:
-            ProxyEndpointProtocol.connectionMade(self)
-        else:
-            ProtocolWrapper.connectionMade(self)
-
-    def connectionLost(self, reason):
-        if self.portforwardStarted:
-            ProxyEndpointProtocol.connectionLost(self, reason)
-        else:
-            ProtocolWrapper.connectionLost(self, reason)
-
-    def loseConnection(self):
-        if self.portforwardStarted:
-            ProxyEndpointProtocol.loseConnection(self)
-        else:
-            ProtocolWrapper.loseConnection(self)
-
-    def writeSequence(self, seq):
-        if self.portforwardStarted:
-            ProxyEndpointProtocol.writeSequence(self, seq)
-        else:
-            ProtocolWrapper.writeSequence(self, seq)
-
+        return self.protocol(self, self.wrappedFactory.buildProtocol(addr))
 
 
 class AgentProxyRequest(http.Request):
@@ -212,27 +219,15 @@ class AgentProxyRequest(http.Request):
             log.msg("CONNECT command received")
 
             def handleError(ing=None):
-                log.err("proxy fail")
+                log.err("endpoint proxy fail")
 
-            proxyClientFactory = ProxyEndpointProtocolFactory(handleLostConnection=handleError)
-            proxyClientFactory.setPeerFactory(self.parentProtocol.wrapperProtocol.factory)
-
-            # XXX todo --> *must* sanitize!
+            # XXX todo: sanitize self.path?
             torEndpointDescriptor = "tor:%s" % self.path
             proxyPeerEndpoint = clientFromString(reactor, torEndpointDescriptor)
-            log.msg("proxyPeerEndpoint: %s" % proxyPeerEndpoint)
-
-            log.msg("<<------------------------------------------------------------------------------")
-            self.parentProtocol.wrapperProtocol.portforwardStarted = True
-
-            ProtocolSwitcherWrappingFactory.setPeerFactory(self.parentProtocol.wrapperProtocol.factory, proxyClientFactory)
-            self.parentProtocol.wrapperProtocol.factory.handleLostConnection = handleError
-            #ProxyEndpointProtocol.makeConnection(self.parentProtocol.wrapperProtocol, self.parentProtocol.wrapperProtocol)
 
 
-            # connect client endpoint
-            proxyPeerConnectDeferred = proxyPeerEndpoint.connect(proxyClientFactory)
-            proxyPeerConnectDeferred.addErrback(handleError)
+            # XXX
+            self.parentProtocol.wrapperProtocol.buildProxyProtocol(proxyPeerEndpoint)
 
             return
 
@@ -279,7 +274,7 @@ class AgentProxy(http.HTTPChannel):
     __first_line = 1
     __content = None
 
-    def __init__(self, agent, factory=None):
+    def __init__(self, agent):
         """
         Create an L{AgentProxy}.
 
@@ -287,7 +282,6 @@ class AgentProxy(http.HTTPChannel):
             to send outbound HTTP requests
         """
         self.requestFactory.agent = agent
-        self.requestFactory.parentFactory = factory
         self.requestFactory.parentProtocol = self
         http.HTTPChannel.__init__(self)
 
@@ -302,9 +296,11 @@ class AgentProxyFactory(http.HTTPFactory):
     on behalf of the HTTP client using this proxy
     """
 
+    noisey = True
+
     def __init__(self, agent):
         self.agent = agent
         http.HTTPFactory.__init__(self)
 
     def buildProtocol(self, addr):
-        return AgentProxy(self.agent, factory=self)
+        return AgentProxy(self.agent)
