@@ -243,7 +243,7 @@ class AgentProxyRequest(http.Request):
 
             # XXX
             self.parentProtocol.wrapperProtocol.buildProxyProtocol(proxyPeerEndpoint)
-
+            self.parentProtocol.transport.write(b"HTTP/1.1 200 OK\r\n\r\n")
             return
 
         log.msg("AgentProxyRequest: requested uri %s from %s" % (self.uri, self.getClientIP()))
