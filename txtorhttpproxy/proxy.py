@@ -91,7 +91,7 @@ class ShinyProxyClientFactory(protocol.Factory):
         return prot
 
 
-class ProxyServerWithClientEndpoint(Proxy):
+class ProxyClientEndpointServer(Proxy):
     """
     Proxy server protocol class for proxying to an endpoint.
     """
@@ -110,16 +110,16 @@ class ProxyServerWithClientEndpoint(Proxy):
         clientFactory.connectDeferred.addErrback(lambda r: self.clientConnectionFailed(r))
 
     def clientConnectionFailed(self, reason):
-        log.err("clientConnectionFailed: %s" % (reason,))
+        log.err("ProxyClientEndpointServer: clientConnectionFailed: %s" % (reason,))
 
 
-class ProxyServerFactoryWithClientEndpoint(protocol.Factory):
+class ProxyClientEndpointServerFactory(protocol.Factory):
     """
     Factory for proxy server TCP port forwarder
     """
 
     noisy = True
-    protocol = ProxyServerWithClientEndpoint
+    protocol = ProxyClientEndpointServer
 
     def __init__(self, clientEndpoint):
         """
@@ -127,40 +127,6 @@ class ProxyServerFactoryWithClientEndpoint(protocol.Factory):
         the IStreamClientEndpoint interface.
         """
         self.clientEndpoint = clientEndpoint
-
-
-# XXX todo - replace wrapper style with proxyForInterface?
-class PortforwardSwitchProtocol(ProtocolWrapper):
-    """
-    This class can wrap Twisted protocols to add support for switching to a
-    TCP port-forwarding proxy.
-    """
-
-    def __init__(self, factory, wrappedProtocol):
-        self.factory = factory
-        self.wrappedProtocol = wrappedProtocol
-        self.wrappedProtocol.wrapperProtocol = self
-        self.portforwardStarted = False
-
-    def buildProxyProtocol(self, endpoint):
-        """
-        Make this protocol relay received data to our client endpoint
-        proxy protocol...
-        """
-        self.proxyFactory = ProxyServerFactoryWithClientEndpoint(endpoint)
-        self.proxyProtocol = self.proxyFactory.buildProtocol(None)
-        self.proxyProtocol.makeConnection(self.transport)
-        self.portforwardStarted = True
-
-    def dataReceived(self, data):
-        if self.portforwardStarted:
-            self.proxyProtocol.dataReceived(data)
-        else:
-            self.wrappedProtocol.dataReceived(data)
-
-    def connectionLost(self, reason):
-        self.factory.unregisterProtocol(self)
-        self.wrappedProtocol.connectionLost(reason)
 
 
 
@@ -208,7 +174,7 @@ class AgentProxyRequest(http.Request):
 
             # XXX todo - send 200 OK via callback after
             # outbound proxy connection is established
-            self.parentProtocol.wrapperProtocol.buildProxyProtocol(proxyPeerEndpoint)
+            self.parentProtocol.buildProxyProtocol(proxyPeerEndpoint)
             self.parentProtocol.transport.write(b"HTTP/1.1 200 OK\r\n\r\n")
             return
 
@@ -264,8 +230,31 @@ class AgentProxy(http.HTTPChannel):
         """
         self.requestFactory.agent = agent
         self.requestFactory.parentProtocol = self
+        self.portforwardStarted = False
+
         http.HTTPChannel.__init__(self)
 
+    def buildProxyProtocol(self, endpoint):
+        """
+        Make this protocol relay received data to our client endpoint
+        proxy protocol...
+        """
+        self.portforwardFactory = ProxyClientEndpointServerFactory(endpoint)
+        self.portforwardProtocol = self.portforwardFactory.buildProtocol(None)
+        self.portforwardProtocol.makeConnection(self.transport)
+        self.portforwardStarted = True
+
+    def dataReceived(self, data):
+        if self.portforwardStarted:
+            self.portforwardProtocol.dataReceived(data)
+        else:
+            http.HTTPChannel.dataReceived(self, data)
+
+    def connectionLost(self, reason):
+        if self.portforwardStarted:
+            self.portforwardProtocol.connectionLost(reason)
+
+        http.HTTPChannel.connectionLost(self, reason)
 
 
 class AgentProxyFactory(http.HTTPFactory):
@@ -282,4 +271,6 @@ class AgentProxyFactory(http.HTTPFactory):
         http.HTTPFactory.__init__(self)
 
     def buildProtocol(self, addr):
-        return AgentProxy(self.agent)
+        protocol = AgentProxy(self.agent)
+        protocol.factory = self
+        return protocol

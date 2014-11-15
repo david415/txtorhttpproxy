@@ -10,7 +10,7 @@ from twisted.protocols.policies import WrappingFactory
 
 from twisted.internet.defer import setDebugging
 
-from txtorhttpproxy import TorAgent, AgentProxyFactory, PortforwardSwitchProtocol
+from txtorhttpproxy import TorAgent, AgentProxyFactory
 
 
 
@@ -35,10 +35,8 @@ def main():
     serverEndpoint = serverFromString(reactor, args.serverEndpoint)
     torAgent = TorAgent(reactor, torSocksHostname=args.torSocksHostname, torSocksPort=args.torSocksPort)
 
-    wrappingFactory = WrappingFactory(AgentProxyFactory(torAgent))
-    wrappingFactory.protocol = PortforwardSwitchProtocol
-
-    connectDeferred = serverEndpoint.listen(wrappingFactory)
+    agentProxyFactory = AgentProxyFactory(torAgent)
+    connectDeferred = serverEndpoint.listen(agentProxyFactory)
 
     # XXX
     def clientConnectionFailed(reason):
