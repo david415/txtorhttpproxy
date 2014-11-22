@@ -1,10 +1,18 @@
 
+import os
+import binascii
 from zope.interface import implementer
 
 from twisted.web.client import Agent, _URI
 from twisted.web.iweb import IAgent
 from twisted.web.error import SchemeNotSupported
 from twisted.internet.endpoints import clientFromString
+
+
+class TorAgentCircuitIsolationModeNotSupported(Exception):
+    """
+    The TorAgent circuit isolation mode was not one of the supported values.
+    """
 
 
 @implementer(IAgent)
@@ -26,9 +34,12 @@ class TorAgent(Agent):
     L{TCP4ClientEndpoint} or C{SSL4ClientEndpoint} for specifying the local
     address to bind to.
     """
+
+    isolationModes = ['circuitPerAgent','monoCircuit']
+
     def __init__(self, reactor,
                  connectTimeout=None, bindAddress=None,
-                 pool=None, torSocksHostname=None, torSocksPort=None):
+                 pool=None, torSocksHostname=None, torSocksPort=None, isolationMode=None):
         """
         Create a L{TorAgent}.
 
@@ -54,13 +65,43 @@ class TorAgent(Agent):
 
         @param torSocksPort: An C{int} giving the SOCKS port number that will be used
             for outbound Tor connections.
+
+        @param isolationMode: A Tor circuit isolation mode:
+        - monoCircuit means always let tor process decide which circuit to use
+        - circuitPerAgent means always use one tor circuit per agent instance
         """
         Agent.__init__(self, reactor,connectTimeout=None, bindAddress=None, pool=None)
 
-        self.torSocksHostname = torSocksHostname
-        self.torSocksPort = torSocksPort
         self._connectTimeout = connectTimeout
         self._bindAddress = bindAddress
+
+        self.torSocksHostname = torSocksHostname
+        self.torSocksPort = torSocksPort
+
+        if isolationMode in self.isolationModes:
+            self.isolationMode = isolationMode
+            if isolationMode == 'circuitPerAgent':
+                self.username, self.password = self._genRandomUserPass()
+        else:
+            raise TorAgentCircuitIsolationModeNotSupported("Unsupported mode: %r" % (isolationMode,))
+
+
+    def _genRandomUserPass(self):
+        username = binascii.b2a_hex(os.urandom(127))
+        password =  binascii.b2a_hex(os.urandom(127))
+        return (username, password)
+
+
+    def _makeEndpointDescriptor(self, host, port):
+        endpointDescriptor = "tor:host=%s:port=%s" % (host, port)
+        if self.torSocksHostname:
+            endpointDescriptor += ":socksHostname=%s" % (self.torSocksHostname,)
+        if self.torSocksPort:
+            endpointDescriptor += ":socksPort=%s" % (self.torSocksPort,)
+
+        if self.isolationMode == 'circuitPerAgent':
+            endpointDescriptor += ":socksUsername=%s:socksPassword=%s" % (self.username, self.password)
+        return endpointDescriptor
 
 
     def _getEndpoint(self, scheme, host, port):
@@ -85,14 +126,10 @@ class TorAgent(Agent):
             kwargs['timeout'] = self._connectTimeout
         kwargs['bindAddress'] = self._bindAddress
 
-        self.endpointDescriptor = "tor:host=%s:port=%s" % (host, port)
-        if self.torSocksHostname:
-            self.endpointDescriptor += ":socksHostname=%s" % (self.torSocksHostname,)
-        if self.torSocksPort:
-            self.endpointDescriptor += ":socksPort=%s" % (self.torSocksPort,)
+        endpointDescriptor = self._makeEndpointDescriptor(host, port)
 
         if scheme == 'http':
-            return clientFromString(self._reactor, self.endpointDescriptor)
+            return clientFromString(self._reactor, endpointDescriptor)
         else:
             raise SchemeNotSupported("Unsupported scheme: %r" % (scheme,))
 
@@ -112,6 +149,10 @@ class TorAgent(Agent):
         parsedURI = _URI.fromBytes(uri)
         endpoint = self._getEndpoint(parsedURI.scheme, parsedURI.host,
                                          parsedURI.port)
+
+        # XXX
+        # perhaps the request method should take a key?
         key = (parsedURI.scheme, parsedURI.host, parsedURI.port)
+
         return self._requestWithEndpoint(key, endpoint, method, parsedURI,
                                          headers, bodyProducer, parsedURI.originForm)

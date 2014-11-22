@@ -33,7 +33,7 @@ def main():
             log.startLogging(open(args.log,'a'))
 
     serverEndpoint = serverFromString(reactor, args.serverEndpoint)
-    torAgent = TorAgent(reactor, torSocksHostname=args.torSocksHostname, torSocksPort=args.torSocksPort)
+    torAgent = TorAgent(reactor, torSocksHostname=args.torSocksHostname, torSocksPort=args.torSocksPort, isolationMode='circuitPerAgent')
 
     agentProxyFactory = AgentProxyFactory(torAgent)
     connectDeferred = serverEndpoint.listen(agentProxyFactory)
