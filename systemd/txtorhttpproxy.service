@@ -1,0 +1,20 @@
+[Unit]
+Description=txtorhttpproxy http to tor proxy
+After=network-online.target
+Requires=network-online.target
+
+[Service]
+Type=simple
+# replace this with something appropriate for your install of torhttpproxy
+# in this case i'm using python virtual env... and tor is not located on loopback.
+ExecStart=/home/human/virtenv-torhttpproxy/bin/torhttpproxy --torSocksHostname 127.0.0.1 --torSocksPort 9050 tcp:interface=192.168.8.1:8118 --log -
+
+NonBlocking=true
+
+User=nobody
+Group=nobody
+
+[Install]
+WantedBy=multi-user.target
+
+
