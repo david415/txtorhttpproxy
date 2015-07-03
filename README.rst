@@ -19,7 +19,7 @@ can be used as a drop in replacement in any application using the Twisted ``Agen
 dependencies
 ------------
 
-txtorsocksx - https://github.com/david415/txtorsocksx
+txtorcon - https://github.com/meejah/txtorcon
 
 
 
@@ -28,7 +28,7 @@ install
 
 you can install txtorhttpproxy in your python virtual environment like this::
 
-   $ pip install git+https://github.com/david415/txtorsocksx.git
+   $ pip install txtorcon
    $ pip install git+https://github.com/david415/txtorhttpproxy.git
 
 
