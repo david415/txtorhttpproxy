@@ -9,7 +9,7 @@ from twisted.protocols.portforward import Proxy, ProxyClient
 from twisted.protocols.policies import ProtocolWrapper
 from twisted.python import log
 from twisted.web.http import PotentialDataLoss
-from twisted.web._newclient import ResponseDone
+from twisted.web.client import ResponseDone
 from twisted.web.iweb import IBodyProducer
 
 
