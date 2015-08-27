@@ -2,12 +2,15 @@
 import os
 import binascii
 from zope.interface import implementer
-
-from twisted.web.client import Agent, _URI
+from twisted.internet.endpoints import clientFromString
 from twisted.web.iweb import IAgent
 from twisted.web.error import SchemeNotSupported
-from twisted.internet.endpoints import clientFromString
-
+from twisted.web.client import Agent
+try:
+    from twisted.web.client import URI
+except ImportError:
+    # for twisted 14.x
+    from twisted.web.client import _URI as URI
 
 class TorAgentCircuitIsolationModeNotSupported(Exception):
     """
@@ -146,7 +149,7 @@ class TorAgent(Agent):
 
         @see: L{twisted.web.iweb.IAgent.request}
         """
-        parsedURI = _URI.fromBytes(uri)
+        parsedURI = URI.fromBytes(uri)
         endpoint = self._getEndpoint(parsedURI.scheme, parsedURI.host,
                                          parsedURI.port)
 
